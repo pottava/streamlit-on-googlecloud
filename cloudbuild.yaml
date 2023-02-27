@@ -1,0 +1,18 @@
+steps:
+  - id: 'test'
+    name: python:3.9
+    entrypoint: bash
+    args: ["-c", "python -m pip install poetry && poetry install --no-interaction --no-ansi --no-root && ./test.sh"]
+
+  - id: 'push'
+    name: 'gcr.io/kaniko-project/executor:latest'
+    args: ['--destination=asia-northeast1-docker.pkg.dev/$PROJECT_ID/my-apps/streamlit:$SHORT_SHA',
+      '--cache=true', '--cache-ttl=6h']
+    waitFor: ['-']
+
+  - id: 'deploy'
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args: ['run', 'deploy', 'my-app', '--region=asia-northeast1',
+      '--image=asia-northeast1-docker.pkg.dev/$PROJECT_ID/my-apps/streamlit:$SHORT_SHA',
+      '--service-account=sa-app@$PROJECT_ID.iam.gserviceaccount.com']

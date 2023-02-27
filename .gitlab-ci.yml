@@ -1,0 +1,35 @@
+image:
+  name: google/cloud-sdk:417.0.0-alpine
+
+variables:
+  GOOGLE_CLOUD_REGION: asia-northeast1
+
+stages:
+  - test
+  - deploy
+
+test:
+  stage: test
+  image: python:3.9-slim
+  script:
+    - pip install poetry
+    - poetry install --no-interaction --no-ansi --no-root
+    - ./test.sh
+  except:
+    - tags
+
+.gcloud_auth: &gcloud_auth
+  before_script:
+    - echo ${CI_JOB_JWT_V2} > .ci_jwt
+    - gcloud iam workload-identity-pools create-cred-config ${GOOGLE_CLOUD_WORKLOAD_IDP} --service-account "sa-cicd@${GOOGLE_CLOUD_PROJECT}.iam.gserviceaccount.com" --credential-source-file .ci_jwt --output-file .cred.json
+    - gcloud auth login --cred-file "$(pwd)/.cred.json"
+    - gcloud config set project ${GOOGLE_CLOUD_PROJECT}
+
+deploy-to-dev:
+  stage: deploy
+  <<: *gcloud_auth
+  script:
+    - gcloud builds submit --tag ${GOOGLE_CLOUD_REGION}-docker.pkg.dev/${GOOGLE_CLOUD_PROJECT}/my-apps/streamlit:${CI_COMMIT_SHORT_SHA} .
+    - gcloud run deploy my-app --image ${GOOGLE_CLOUD_REGION}-docker.pkg.dev/${GOOGLE_CLOUD_PROJECT}/my-apps/streamlit:${CI_COMMIT_SHORT_SHA} --region "${GOOGLE_CLOUD_REGION}" --service-account "sa-app@${GOOGLE_CLOUD_PROJECT}.iam.gserviceaccount.com"
+  only:
+    - main

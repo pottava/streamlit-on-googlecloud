@@ -1,0 +1,62 @@
+name: Release to Cloud Run
+
+on:
+  push:
+    branches:
+    - main
+
+env:
+  GOOGLE_CLOUD_REGION: "asia-northeast1"
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.9'
+
+    - name: Test
+      run: |
+        pip install poetry
+        poetry install --no-interaction --no-ansi --no-root
+        ./test.sh
+
+    - name: Auth
+      uses: google-github-actions/auth@v1
+      with:
+        workload_identity_provider: ${{ secrets.GOOGLE_CLOUD_WORKLOAD_IDP }}
+        service_account: "sa-cicd@${{ secrets.GOOGLE_CLOUD_PROJECT }}.iam.gserviceaccount.com"
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v1
+
+    - name: Configure docker
+      run: gcloud auth configure-docker ${{ env.GOOGLE_CLOUD_REGION }}-docker.pkg.dev --quiet
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Build the image
+      uses: docker/build-push-action@v3
+      with:
+        tags: ${{ env.GOOGLE_CLOUD_REGION }}-docker.pkg.dev/${{ secrets.GOOGLE_CLOUD_PROJECT }}/my-apps/streamlit:${{ github.sha }}
+        push: true
+
+    - name: Release
+      uses: google-github-actions/deploy-cloudrun@v1
+      with:
+        service: my-app
+        region: ${{ env.GOOGLE_CLOUD_REGION }}
+        image: ${{ env.GOOGLE_CLOUD_REGION }}-docker.pkg.dev/${{ secrets.GOOGLE_CLOUD_PROJECT }}/my-apps/streamlit:${{ github.sha }}
+        flags: --service-account=sa-app@${{ secrets.GOOGLE_CLOUD_PROJECT }}.iam.gserviceaccount.com
